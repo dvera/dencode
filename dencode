@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+
+# process metadata file
+tr ' ' '_' | tr ',_' ',' | sed 's/\t\t/\tNA\t/g ; s/\t$/NA\t/g ; s/(s)//g'
+
+if [[ ${Assay} == "ChIP-seq" ]]; then
+  out=${Project}_${Assembly}_${Biosample_term_name}_${Assay}_${Experiment_target}_${Output_type}.${File_format}
+elif [[ ${Assay} == "RNA-seq" ]]; then
+  out=${Project}_${Assembly}_${Biosample_term_name}_${Assay}_${Experiment_target}_${Output_type}.${File_format}
+fi
+
+-q query-mode. comma-separated list of unique values in specified fields
+-g genome [ hg38, hg19, mm10 ] (required)
+-f format [ bigWig, bigBed, etc ] (required)
+-a assay [ ATAC-seq, ChIP-seq, DNase-seq, RNA-seq, etc ] (required)
+-t target [ RNAPII , etc ]
+-p threads
+-b biosample [GM12878,IMR90,etc] (required?)
+-z allow audited (not NA in last columns)
+-o other rules
+
+set -e
+
+usage() {
+  echo "Usage: $(basename $0) <options> -a index1prefix -b index2prefix -1 R1.fastq [-2 R2.fastq]" > /dev/stderr
+  echo "" > /dev/stderr
+  echo "Input options:" > /dev/stderr
+  echo "" > /dev/stderr
+  echo "    -a INDEX1        (REQUIRED) Path to aligner index of genome 1" > /dev/stderr
+  echo "    -b INDEX2        (REQUIRED) Path to aligner index of genome 1" > /dev/stderr
+  echo "    -1 FASTQ1        (REQUIRED) Path to single-end or mate1 fastq file (can be gzip-compressed)" > /dev/stderr
+  echo "    -2 FASTQ2        Path to mate2 fastq file (optional, can be gzip-compressed)" > /dev/stderr
+  echo "Output options:" > /dev/stderr
+
+  echo "    -t THREADS       Maximum number of CPU threads to use"                            > /dev/stderr
+  echo "    -o outdir        Path to directory to save output"                                > /dev/stderr
+  echo "    -n PREFIX        Prefix to use for output alignment files"                        > /dev/stderr
+  echo "    -i               Run analysis in steps rather than at once"                       > /dev/stderr
+  echo "                         (slower, but helpful with low-memory or debugging)"          > /dev/stderr
+  echo "    -e ERRORFILE     Path to file to output stderr"                                   > /dev/stderr
+  echo "    -d               Enable debug mode. Outputs parsing info for each read"           > /dev/stderr
+  echo "    -x MINAS         Minimum alignment score to consider parsing a read"              > /dev/stderr
+  echo "                         For end-to-end alignment with bowtie2, defaults to -20"      > /dev/stderr
+  echo "    -q MINMAQ        Minimum alignment quality to consider parsing a read"            > /dev/stderr
+  echo "                         For end-to-end alignment with bowtie2, defaults to 20"       > /dev/stderr
+  echo "    -e ERRORFILE     Path to file to output stderr"                                   > /dev/stderr
+  echo "" > /dev/stderr
+  exit 1
+}
+
+while getopts ":t:a:b:1:2:q:x:o:n:e:id" opt; do
+  case $opt in
+  q)
+    query=$OPTARG
+   ;;
+  g)
+    genome=$OPTARG
+   ;;
+  f)
+    format=$OPTARG
+   ;;
+  a)
+    assay=$OPTARG
+   ;;
+  t)
+    target=$OPTARG
+   ;;
+  b)
+    biosample=$OPTARG
+   ;;
+  o)
+    otherrules=$OPTARG
+   ;;
+  p)
+    threads=$OPTARG
+   ;;
+  z)
+    allowaudit=1
+   ;;
+  c)
+    compartment=$OPTARG
+   ;;
+  w)
+    windows=$OPTARG
+   ;;
+  \?)
+    echo "Invalid option: -$OPTARG" > /dev/stderr
+    usage
+   ;;
+  [?])
+   usage
+   ;;
+  :)
+   echo "Option -$OPTARG requires an argument." > /dev/stderr
+   usage
+   ;;
+  esac
+done
+
+shift $((OPTIND-1))
+
+metadata=$@
+
+###########################
+## SET ARGUMENT DEFAULTS ##
+###########################
+
+if [ -z $threads ]; then
+  threads=1
+fi
+if [ -z $debug ]; then
+  debug=0
+fi
+if [ -z $minmaq ]; then
+  minmaq=20
+fi
+if [ -z $minas ]; then
+  minas=-20
+fi
+if [ -z $inter ]; then
+  inter=0
+fi
+if [ -z /dev/stderr ]; then
+  errfile="/dev/stderr"
+fi
+
+#############################
+##    PARAMETER CHECKING   ##
+#############################
+
+if [ -z $threads ]; then
+  threads=1
+fi
+if [ ! -f $windows ]; then
+  echo "***ERROR***  cannot find window file at $windows" > /dev/stderr
+  usage
+fi
+if [ ! -f $metadata ]; then
+  echo "***ERROR***  cannot find metadata file at $metadata" > /dev/stderr
+  usage
+fi
+if [ -z $metadata ]; then
+  echo "***ERROR***  metadata file not defined" > /dev/stderr
+  usage
+fi
+
+getcolnames(){
+  head -n 1 $metadata | tr -d '\r' | sed "s/'//g ; s/ /_/g ; s/,_/,/g ; s/\t\t/\tNA\t/g ; s/\t$/NA\t/g ; s/(s)//g "
+}
+export -f getcolnames
+
+cols=$(getcolnames)
+
+getthedata(){
+  tail -n+2 $metadata | tr -d '\r' | sed "s/'//g ; s/ /_/g ; s/,_/,/g ; s/\t\t/\tNA\t/g ; s/\t$/NA\t/g ; s/(s)//g"
+}
+export -f getthedata
+
+########################################################
+
+if [ ! -z $query ]; then
+  while IFS=$'\t' read -r $cols
+  do
+    for i in $(echo $query | tr ',' ' '); do
+      printf "%s\t" ${!i}
+    done
+    printf "\n"
+  done <  <(getthedata) | uniq | sort | uniq -c
+fi
+
+if [ -z $query ]; then
+  while IFS=$'\t' read -r $cols
+  do
+    if [ ! -z $genome ];
+      then
+        if [ $Assembly == $genome ];
+          
+
+    for i in $(echo $query | tr ',' ' '); do
+      printf "%s\t" ${!i}
+    done
+    printf "\n"
+  done <  <(getthedata) | uniq | sort | uniq -c
+fi
